@@ -1,61 +1,73 @@
-# template-for-proposals
+# Performant & Safe ArrayBuffer validations
 
-A repository template for ECMAScript proposals.
+## The problems
 
-## Before creating a proposal
+### Detaching array buffers
 
-Please ensure the following:
-  1. You have read the [process document](https://tc39.github.io/process-document/)
-  1. You have reviewed the [existing proposals](https://github.com/tc39/proposals/)
-  1. You are aware that your proposal requires being a member of TC39, or locating a TC39 delegate to "champion" your proposal
+Efficiently and safely validating and reusing array buffers requires `detaching` and `transfering` of the underlying backing store.
 
-## Create your proposal repo
+Current JavaScript features requires the use of `.slice()` in order to copy the underlying data of an `ArrayBuffer` to a new variable, which eventually doubles the memory usage (referencing the variable and the copied variable). The requirement of copying the arrayBuffer through a `slice` operation creates performance issues.
 
-Follow these steps:
-  1. Click the green ["use this template"](https://github.com/tc39/template-for-proposals/generate) button in the repo header. (Note: Do not fork this repo in GitHub's web interface, as that will later prevent transfer into the TC39 organization)
-  1. Update the biblio to the latest version: `npm install --save-dev --save-exact @tc39/ecma262-biblio@latest`.
-  1. Go to your repo settings “Options” page, under “GitHub Pages”, and set the source to the **main branch** under the root (and click Save, if it does not autosave this setting)
-      1. check "Enforce HTTPS"
-      1. On "Options", under "Features", Ensure "Issues" is checked, and disable "Wiki", and "Projects" (unless you intend to use Projects)
-      1. Under "Merge button", check "automatically delete head branches"
-<!--
-  1. Avoid merge conflicts with build process output files by running:
-      ```sh
-      git config --local --add merge.output.driver true
-      git config --local --add merge.output.driver true
-      ```
-  1. Add a post-rewrite git hook to auto-rebuild the output on every commit:
-      ```sh
-      cp hooks/post-rewrite .git/hooks/post-rewrite
-      chmod +x .git/hooks/post-rewrite
-      ```
--->
-  3. ["How to write a good explainer"][explainer] explains how to make a good first impression.
+### Check if array buffer is detached
 
-      > Each TC39 proposal should have a `README.md` file which explains the purpose
-      > of the proposal and its shape at a high level.
-      >
-      > ...
-      >
-      > The rest of this page can be used as a template ...
+Currently there isn't any performant way of detecting whether an ArrayBuffer is detached or not. Following JavaScript implementation is the only possible implementation in the JavaScript userland.
 
-      Your explainer can point readers to the `index.html` generated from `spec.emu`
-      via markdown like
+```js
+const assert = require('node:assert')
 
-      ```markdown
-      You can browse the [ecmarkup output](https://ACCOUNT.github.io/PROJECT/)
-      or browse the [source](https://github.com/ACCOUNT/PROJECT/blob/HEAD/spec.emu).
-      ```
+function isBufferDetached(buffer) {
+  if (buffer.byteLength === 0) {
+    try {
+      new Uint8Array(buffer);
+    } catch (error) {
+      assert(error.name === 'TypeError');
+      return true;
+    }
+  }
+  return false
+}
+```
 
-      where *ACCOUNT* and *PROJECT* are the first two path elements in your project's Github URL.
-      For example, for github.com/**tc39**/**template-for-proposals**, *ACCOUNT* is "tc39"
-      and *PROJECT* is "template-for-proposals".
+## FAQ
 
+- What does `detach()` do?
 
-## Maintain your proposal repo
+Detaches this ArrayBuffer and all its views (typed arrays). Detaching sets the byte length of the buffer and all typed arrays to zero, preventing JavaScript from ever accessing underlying backing store. ArrayBuffer should have been externalized and must be detachable.
 
-  1. Make your changes to `spec.emu` (ecmarkup uses HTML syntax, but is not HTML, so I strongly suggest not naming it ".html")
-  1. Any commit that makes meaningful changes to the spec, should run `npm run build` and commit the resulting output.
-  1. Whenever you update `ecmarkup`, run `npm run build` and commit any changes that come from that dependency.
+- What is the current usage for `detach()` in Node?
 
-  [explainer]: https://github.com/tc39/how-we-work/blob/HEAD/explainer.md
+Node.js uses it's own implementation of `detachArrayBuffer` in [`webstreams`](https://github.com/nodejs/node/blob/main/lib/internal/webstreams/util.js#L134) and readable streams.
+
+- What are the alternatives for `detach()`?
+
+ Referencing [`ArrayBuffer.prototype.transfer()`](https://github.com/domenic/proposal-arraybuffer-transfer/tree/d4e00037420b87d0b5662c82b74d56b4ba1562ad#detaching-and-transferring) proposal:
+
+> Some web platform APIs, notably the various postMessage() methods and the BYOB reader mode for ReadableStream, have a solution for this dillema. When you pass an ArrayBuffer (or wrapper around one, such as a typed array) to one of these APIs, they take ownership of the data block encapsulated in the ArrayBuffer.
+
+- Does any of the engines support a similar functionality?
+
+v8 & Webkit already supports similar functionality.
+
+## References
+
+- `detach()`
+    - [v8 API](https://v8docs.nodesource.com/node-18.2/d5/d6e/classv8_1_1_array_buffer.html#abb7a2b60240651d16e17d02eb6f636cf)
+    - [Webkit Implementation](https://github.com/WebKit/WebKit/blob/6545977030f491dd87b3ae9fd666f6b949ae8a74/Source/JavaScriptCore/runtime/ArrayBuffer.h#L307)
+    - [Node.js alternative Public API](https://github.com/nodejs/node/pull/45512)
+- `isDetached`
+    - [Node.js Internal Implementation](https://github.com/nodejs/node/pull/45568)
+    - [v8 implementation](https://github.com/v8/v8/commit/9df5ef70ff18977b157028fc55ced5af4bcee535)
+    - [Webkit implementation](https://github.com/WebKit/WebKit/blob/6545977030f491dd87b3ae9fd666f6b949ae8a74/Source/JavaScriptCore/runtime/ArrayBuffer.h#L308)
+    - [Node.js alternative Public API](https://github.com/nodejs/node/pull/45512)
+    - [v8 optimization issue on Node.js](https://github.com/nodejs/node/blob/main/lib/querystring.js#L472)
+
+## Possible Solutions
+
+### `ArrayBuffer.prototype.detach()`
+
+This is a proposal to add a new method, `detach()`, to JavaScript's `ArrayBuffer` class. 
+
+### `ArrayBuffer.prototype.isDetached`
+
+This is a proposal to add a new instance variable, `isDetached`, to JavaScript's `ArrayBuffer` class.
+
