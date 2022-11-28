@@ -1,5 +1,14 @@
 # Performant & Safe ArrayBuffer validations
 
+## [Status](https://tc39.github.io/process-document/)
+
+**Stage**: -1
+
+**Authors/Champions**: (in alphabetical order)
+
+- Yagiz Nizipli (node.js / OpenJS Foundation, [@yagiznizipli](https://twitter.com/yagiznizipli)
+- Jordan Harband ([@ljharb](https://twitter.com/ljharb))
+
 ## The problems
 
 ### Detaching array buffers
